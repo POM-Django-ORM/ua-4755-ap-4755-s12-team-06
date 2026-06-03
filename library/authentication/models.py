@@ -47,8 +47,8 @@ class CustomUser(AbstractBaseUser):
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=128)
 
-    created_at = models.DateTimeField(default=timezone.now)
-    updated_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(null=True, blank=True)
 
     role = models.IntegerField(default=0)
     is_active = models.BooleanField(default=False)
@@ -59,15 +59,14 @@ class CustomUser(AbstractBaseUser):
     # ----------------------------------------
 
     def save(self, *args, **kwargs):
-        #  datetime  в timestamp
-        if isinstance(self.created_at, (int, float)):
-            self.created_at = datetime.datetime.fromtimestamp(
-                self.created_at, tz=datetime.timezone.utc
-            )
-        if isinstance(self.updated_at, (int, float)):
-            self.updated_at = datetime.datetime.fromtimestamp(
-                self.updated_at, tz=datetime.timezone.utc
-            )
+        now = timezone.now()
+
+        if self.created_at is None:
+            self.created_at = now
+
+        if self.updated_at is None:
+            self.updated_at = now
+
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -139,8 +138,20 @@ class CustomUser(AbstractBaseUser):
         :type password: str
         :return: a new user object which is also written into the DB
         """
+        user = CustomUser.get_by_email(email)
+        if user:
+            return None
+
         if not email or "@" not in email:
             return None
+
+        if (
+            (first_name and len(first_name) > 20)
+            or (last_name and len(last_name) > 20)
+            or (middle_name and len(middle_name) > 20)
+        ):
+            return None
+
         try:
             user = CustomUser(
                 email=email,
@@ -152,7 +163,8 @@ class CustomUser(AbstractBaseUser):
             user.full_clean()
             user.save()
             return user
-        except Exception:
+        except Exception as e:
+            print("ERROR:", e)
             return None
 
     def to_dict(self):
@@ -172,11 +184,7 @@ class CustomUser(AbstractBaseUser):
         |   'is_active:' True
         | }
         """
-        c_at = (
-            int(self.created_at.timestamp())
-            if isinstance(self.created_at, datetime.datetime)
-            else int(self.created_at)
-        )
+        c_at = int(self.created_at.timestamp()) if self.created_at else None
         u_at = (
             int(self.updated_at.timestamp())
             if isinstance(self.updated_at, datetime.datetime)
@@ -233,7 +241,7 @@ class CustomUser(AbstractBaseUser):
         if is_active is not None:
             self.is_active = is_active
 
-        self.updated_at = int(timezone.now().timestamp())
+        self.updated_at = timezone.now()
         self.save()
 
     @staticmethod

@@ -1,6 +1,5 @@
 import datetime
 from django.db import models
-from django.utils import timezone
 
 from authentication.models import CustomUser
 from book.models import Book
@@ -10,39 +9,24 @@ class Order(models.Model):
     book = models.ForeignKey(Book, on_delete=models.CASCADE)
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
 
-    created_at = models.DateTimeField(default=timezone.now)
-    end_at = models.IntegerField(null=True, blank=True)
-    plated_end_at = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    def save(self, *args, **kwargs):
-        if isinstance(self.created_at, (int, float)):
-            self.created_at = datetime.datetime.fromtimestamp(
-                self.created_at, tz=datetime.timezone.utc
-            )
-
-        if isinstance(self.end_at, datetime.datetime):
-            self.end_at = int(self.end_at.timestamp())
-
-        if isinstance(self.plated_end_at, datetime.datetime):
-            self.plated_end_at = int(self.plated_end_at.timestamp())
-
-        super().save(*args, **kwargs)
+    end_at = models.DateTimeField(null=True, blank=True)
+    plated_end_at = models.DateTimeField()
 
     def __str__(self):
-        def fmt_date(dt):
+        def fmt(dt):
             if not dt:
                 return None
-            if isinstance(dt, (int, float)):
-                dt = datetime.datetime.fromtimestamp(dt, tz=datetime.timezone.utc)
             return dt.strftime("%Y-%m-%d %H:%M:%S+00:00")
 
         fields = {
             "id": self.id,
             "user": f"CustomUser(id={self.user.id})",
             "book": f"Book(id={self.book.id})",
-            "created_at": fmt_date(self.created_at),
-            "end_at": fmt_date(self.end_at),
-            "plated_end_at": fmt_date(self.plated_end_at),
+            "created_at": fmt(self.created_at),
+            "end_at": fmt(self.end_at),
+            "plated_end_at": fmt(self.plated_end_at),
         }
 
         res = []
@@ -60,16 +44,12 @@ class Order(models.Model):
         return f"Order(id={self.id})"
 
     def to_dict(self):
-        c_at = (
-            int(self.created_at.timestamp())
-            if isinstance(self.created_at, datetime.datetime)
-            else self.created_at
-        )
+
         return {
             "id": self.id,
             "book": self.book.id,
             "user": self.user.id,
-            "created_at": c_at,
+            "created_at": self.created_at,
             "end_at": self.end_at,
             "plated_end_at": self.plated_end_at,
         }
@@ -78,24 +58,21 @@ class Order(models.Model):
     def create(user, book, plated_end_at):
         if not user or not user.id or not book or not book.id:
             return None
-
-        if book.count <= 0:
+        if Order.objects.filter(book=book, end_at__isnull=True).count() >= book.count:
             return None
-
         try:
-            # Якщо прийшов рядок (ISO-дата), перетворюємо її в timestamp
             if isinstance(plated_end_at, str):
-                dt = datetime.datetime.fromisoformat(
+                plated_end_at = datetime.datetime.fromisoformat(
                     plated_end_at.replace("Z", "+00:00")
                 )
-                plated_end_at = int(dt.timestamp())
-
-            order = Order(user=user, book=book, plated_end_at=plated_end_at)
+            order = Order(
+                user=user,
+                book=book,
+                plated_end_at=plated_end_at,
+            )
             order.save()
-
             book.count -= 1
             book.save()
-
             return order
         except Exception:
             return None
@@ -109,18 +86,24 @@ class Order(models.Model):
 
     def update(self, plated_end_at=None, end_at=None):
         if plated_end_at is not None:
-            self.plated_end_at = (
-                int(plated_end_at.timestamp())
-                if isinstance(plated_end_at, datetime.datetime)
-                else plated_end_at
-            )
+            if isinstance(plated_end_at, int):
+                plated_end_at = datetime.datetime.fromtimestamp(
+                    plated_end_at, tz=datetime.timezone.utc
+                )
+            elif isinstance(plated_end_at, str):
+                plated_end_at = datetime.datetime.fromisoformat(
+                    plated_end_at.replace("Z", "+00:00")
+                )
+            self.plated_end_at = plated_end_at
 
         if end_at is not None:
-            self.end_at = (
-                int(end_at.timestamp())
-                if isinstance(end_at, datetime.datetime)
-                else end_at
-            )
+            if isinstance(end_at, int):
+                end_at = datetime.datetime.fromtimestamp(
+                    end_at, tz=datetime.timezone.utc
+                )
+            elif isinstance(end_at, str):
+                end_at = datetime.datetime.fromisoformat(end_at.replace("Z", "+00:00"))
+            self.end_at = end_at
 
         self.save()
 
